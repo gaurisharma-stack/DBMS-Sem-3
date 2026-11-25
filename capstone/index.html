@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CareLedger: patients, visits and AI symptom matching</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%279%27 fill=%27%236ee7d8%27/%3E%3Cpath d=%27M6 17h5l2.5-6 4 11 2.8-7H26%27 fill=%27none%27 stroke=%27%23062a27%27 stroke-width=%272.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a1c24;--bg2:#0d2530;--panel:rgba(173,236,228,.045);--panel2:rgba(173,236,228,.08);
+  --line:rgba(150,220,214,.13);--line2:rgba(150,220,214,.24);
+  --ink:#e6f2f0;--mute:#8fa9aa;--faint:#5d7a7d;
+  --aqua:#6ee7d8;--aqua2:#3fc2b3;--onaqua:#062a27;
+  --coral:#ff8e7f;--coralbg:rgba(255,142,127,.13);--amber:#f5c46b;--amberbg:rgba(245,196,107,.13);--mint:#8be3a6;--mintbg:rgba(139,227,166,.12);
+  --r-lg:22px;--r:14px;--r-sm:9px;
+  --display:'Sora',system-ui,sans-serif;--body:'Figtree',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{height:100%}
+body{margin:0;min-height:100%;color:var(--ink);font:15px/1.6 var(--body);
+  background:radial-gradient(1100px 700px at 78% -10%,#123b49 0%,transparent 60%),radial-gradient(900px 600px at -10% 110%,#0f3138 0%,transparent 55%),var(--bg);
+  background-attachment:fixed;padding-top:env(safe-area-inset-top,0px)}
+h1,h2,h3{font-family:var(--display);margin:0;font-weight:600;letter-spacing:-.02em}
+h1{font-size:clamp(1.9rem,1.3rem + 1.8vw,2.7rem);line-height:1.12;font-weight:700}
+h2{font-size:1.18rem;line-height:1.3}
+h3{font-size:1rem;line-height:1.35}
+p{margin:.35rem 0 0;max-width:68ch}
+a{color:var(--aqua)}
+.mute{color:var(--mute)}.faint{color:var(--faint)}
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
+nav{position:sticky;top:0;height:100vh;padding:1.4rem .9rem;display:flex;flex-direction:column;gap:.15rem;
+  border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(13,37,48,.85),rgba(10,28,36,.6));backdrop-filter:blur(14px)}
+.brand{display:flex;align-items:center;gap:.65rem;padding:.2rem .6rem 1.4rem;font:700 1.15rem var(--display);letter-spacing:-.02em}
+.brand svg{flex:none}
+nav button{display:flex;align-items:center;gap:.7rem;width:100%;text-align:left;background:none;border:0;color:var(--mute);
+  padding:.6rem .7rem;border-radius:var(--r-sm);font:500 14.5px var(--body);cursor:pointer;transition:background .15s,color .15s}
+nav button svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+nav button:hover{color:var(--ink);background:var(--panel)}
+nav button.on{color:var(--ink);background:var(--panel2);box-shadow:inset 2px 0 0 var(--aqua)}
+nav button.on svg{color:var(--aqua)}
+.conn{margin-top:auto;display:flex;align-items:center;gap:.5rem;padding:.6rem .7rem;font-size:12.5px;color:var(--mute)}
+.conn i{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.conn.ok i{background:var(--mint);box-shadow:0 0 0 4px rgba(139,227,166,.15)}.conn.err i{background:var(--coral)}
+main{padding:2.2rem clamp(1rem,3.4vw,3rem) 5rem;max-width:1240px;width:100%}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.6rem}
+.sec{margin-top:2.4rem}.sec>h2{margin-bottom:.8rem}
+/* ---------- surfaces ---------- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:1.3rem 1.4rem}
+.panel+.panel{margin-top:1rem}
+.grid2>.panel,.docs>.panel{margin-top:0}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem}
+.row{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.85rem 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.row:last-child{border-bottom:0}
+.row>div:first-child{min-width:0;flex:1 1 240px}
+.acts{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:.3rem;padding:.12rem .62rem;border-radius:99px;font-size:12.5px;background:var(--panel2);color:var(--ink);margin:0 .3rem .25rem 0;white-space:nowrap;border:1px solid transparent}
+.chip.hi{background:var(--coralbg);color:var(--coral)}.chip.warn{background:var(--amberbg);color:var(--amber)}.chip.ok{background:var(--mintbg);color:var(--mint)}
+.chip.line{background:none;border-color:var(--line2);color:var(--mute)}
+/* ---------- controls ---------- */
+.b{display:inline-flex;align-items:center;gap:.45rem;background:var(--aqua);color:var(--onaqua);border:0;border-radius:99px;padding:.6rem 1.15rem;
+  font:600 14px var(--body);cursor:pointer;text-decoration:none;transition:transform .12s,box-shadow .2s;box-shadow:0 6px 24px -8px rgba(110,231,216,.55)}
+.b:hover{transform:translateY(-1px);box-shadow:0 10px 30px -8px rgba(110,231,216,.7)}
+.b:active{transform:translateY(0)}
+.g{display:inline-flex;align-items:center;background:none;border:1px solid var(--line2);color:var(--ink);border-radius:99px;padding:.42rem .9rem;font:500 13.5px var(--body);cursor:pointer;text-decoration:none}
+.g:hover{border-color:var(--aqua);color:var(--aqua)}
+.g.danger:hover{border-color:var(--coral);color:var(--coral)}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--aqua);outline-offset:2px}
+label{display:flex;flex-direction:column;font-size:12.5px;color:var(--mute);gap:.3rem;font-weight:500}
+input,select{font:inherit;font-size:14.5px;color:var(--ink);background:rgba(4,18,24,.55);border:1px solid var(--line2);border-radius:var(--r-sm);padding:.55rem .7rem;min-width:0;color-scheme:dark}
+input::placeholder{color:var(--faint)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;align-items:end}
+.form .b{justify-content:center}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:.55rem .8rem .55rem 0;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mute);font-weight:500;font-size:12.5px}
+.wrap{overflow-x:auto}
+/* ---------- overview hero ---------- */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:1rem;align-items:center;margin:-.6rem 0 1rem}
+.hero h1{max-width:13ch}
+.hero .lede{font-size:1.06rem;color:var(--mute);margin-top:.9rem;max-width:44ch}
+.figs{display:flex;gap:2rem;margin:1.6rem 0;flex-wrap:wrap}
+.figs div{display:flex;flex-direction:column}
+.figs b{font:600 1.9rem/1 var(--display);letter-spacing:-.03em}
+.figs span{font-size:13px;color:var(--mute);margin-top:.35rem}
+.globe{position:relative;height:clamp(320px,44vw,480px);border-radius:var(--r-lg);overflow:hidden;
+  background:radial-gradient(circle at 50% 50%,rgba(110,231,216,.12),transparent 62%);touch-action:none;cursor:grab}
+.globe-canvas{display:block;width:100%;height:100%}
+.globe-tip{position:absolute;left:0;top:0;pointer-events:none;background:rgba(6,22,29,.92);border:1px solid var(--line2);padding:.3rem .6rem;border-radius:8px;font-size:12.5px;white-space:nowrap;z-index:2}
+.globe.no-webgl::after{content:'3D view needs WebGL';position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:13px}
+.legend{display:flex;gap:1.1rem;flex-wrap:wrap;font-size:12.5px;color:var(--mute);margin-top:.6rem}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.4rem;vertical-align:0}
+/* ---------- patients ---------- */
+.avatar{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;font:600 14px var(--display);color:var(--onaqua);
+  background:linear-gradient(135deg,var(--aqua),#9fd7f5);flex:none}
+.who{display:flex;gap:.85rem;align-items:center}
+.vitals{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.7rem}
+.vital{border:1px solid var(--line);border-radius:var(--r);padding:.8rem .9rem;background:rgba(4,18,24,.35)}
+.vital b{display:block;font:600 1.45rem/1.1 var(--display);letter-spacing:-.02em;margin-top:.25rem}
+.vital span{font-size:12.5px;color:var(--mute)}
+.vital.flag{border-color:rgba(255,142,127,.5);background:var(--coralbg)}
+.vital.flag em{color:var(--coral);font-style:normal;font-size:12px;font-weight:600;margin-left:.3rem}
+/* ---------- doctors ---------- */
+.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
+.doc{display:flex;flex-direction:column;gap:.55rem;padding:1.2rem}
+.doc .meta{font-size:13.5px;color:var(--mute)}
+.doc .sch{font-size:13px;color:var(--mute);line-height:1.5}
+.doc .g{align-self:flex-start;margin-top:auto}
+.doc .bio{font-size:13.5px;line-height:1.45;margin:0}
+.doc .stats{font-size:13px;color:var(--mute)}.doc .stats b{color:var(--ink);font-weight:600}
+.doc .leave{font-size:12.5px;color:var(--amber);background:var(--amberbg);border-radius:10px;padding:.35rem .6rem}
+.slotbox{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;min-height:2.2rem}
+.slot{background:none;border:1px solid var(--line2);color:var(--ink);border-radius:10px;padding:.35rem .7rem;font:500 13px var(--body);cursor:pointer}
+.slot:hover:not(:disabled):not(.on){border-color:var(--aqua);color:var(--aqua)}
+.slot.on{background:var(--aqua);color:var(--onaqua);border-color:var(--aqua)}
+.slot:disabled{opacity:.35;cursor:not-allowed;text-decoration:line-through}
+/* ---------- symptom checker ---------- */
+.checker{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:1.2rem;align-items:start}
+.side{position:sticky;top:1.2rem}
+.side .globe{height:340px}
+.filters{display:flex;gap:.35rem;flex-wrap:wrap;margin:.8rem 0}
+.filters button{background:none;border:1px solid var(--line);color:var(--mute);border-radius:99px;padding:.26rem .7rem;font:500 12.5px var(--body);cursor:pointer}
+.filters button.on{border-color:var(--aqua);color:var(--aqua);background:rgba(110,231,216,.08)}
+.symlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;max-height:330px;overflow:auto;padding-right:.3rem}
+.sym{display:flex;align-items:center;gap:.5rem;text-align:left;background:rgba(4,18,24,.4);border:1px solid var(--line);color:var(--ink);border-radius:var(--r-sm);padding:.45rem .65rem;font:inherit;font-size:13.5px;cursor:pointer}
+.sym:hover{border-color:var(--line2)}
+.sym i{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--faint);flex:none}
+.sym.on{border-color:rgba(255,142,127,.55);background:var(--coralbg)}
+.sym.on i{border-color:var(--coral);background:var(--coral);box-shadow:inset 0 0 0 2px #2a1714}
+.tray{margin-top:1rem;display:flex;flex-direction:column;gap:.4rem}
+.tray .t{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.4rem .2rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.sev{display:inline-flex;border:1px solid var(--line2);border-radius:99px;overflow:hidden}
+.sev button{background:none;border:0;color:var(--mute);width:30px;height:26px;font:600 12.5px var(--body);cursor:pointer}
+.sev button.on{background:var(--coral);color:#2a1714}
+.x{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1;padding:0 .2rem}
+.x:hover{color:var(--coral)}
+.match{margin-top:1.2rem;padding:1.4rem;border-radius:var(--r-lg);border:1px solid rgba(245,196,107,.35);
+  background:linear-gradient(140deg,rgba(245,196,107,.12),rgba(110,231,216,.05) 60%);transform-origin:50% 0}
+.match.new{animation:flip .75s cubic-bezier(.2,.8,.2,1) both}
+@keyframes flip{from{opacity:0;transform:perspective(900px) rotateX(-75deg) translateY(-8px)}to{opacity:1;transform:perspective(900px) rotateX(0)}}
+.match h2{font-size:1.5rem;margin:.2rem 0 .3rem}
+.prec{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem;margin:.9rem 0 0;padding:0;list-style:none;counter-reset:p}
+.prec li{counter-increment:p;font-size:13.5px;padding:.45rem .6rem .45rem 2rem;position:relative;background:rgba(4,18,24,.35);border-radius:var(--r-sm)}
+.prec li::before{content:counter(p);position:absolute;left:.6rem;top:.45rem;font-weight:600;color:var(--amber)}
+.bars{margin-top:1rem}
+.bar{display:grid;grid-template-columns:minmax(120px,1.1fr) 2fr auto;gap:.8rem;align-items:center;padding:.35rem 0;font-size:14px}
+.bar .track{height:8px;border-radius:99px;background:rgba(150,220,214,.1);overflow:hidden}
+.bar .track i{display:block;height:100%;border-radius:99px;background:var(--aqua);transform-origin:left;animation:grow .8s cubic-bezier(.2,.8,.2,1) both}
+.bar.top .track i{background:var(--amber)}
+.bar small{color:var(--mute);font-size:12.5px;white-space:nowrap}
+@keyframes grow{from{transform:scaleX(0)}}
+/* ---------- kaggle ---------- */
+.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem;list-style:none;margin:0;padding:0;counter-reset:f}
+.flow li{counter-increment:f;padding:1rem;border:1px solid var(--line);border-radius:var(--r);background:rgba(4,18,24,.35);font-size:13.5px;color:var(--mute)}
+.flow li::before{content:counter(f);display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:rgba(110,231,216,.12);color:var(--aqua);font:600 13px var(--display);margin-bottom:.6rem}
+.flow b{display:block;color:var(--ink);font-weight:600;margin-bottom:.2rem}
+code{font-size:12.5px;background:rgba(4,18,24,.6);padding:.08rem .35rem;border-radius:5px;color:#bdeee7}
+.acc{display:flex;flex-direction:column;gap:1rem}
+.acc .bar{grid-template-columns:minmax(0,1fr) auto}
+.acc .bar .track{grid-column:1/-1;height:10px}
+.hbar{display:grid;grid-template-columns:minmax(130px,170px) 1fr 44px;gap:.7rem;align-items:center;font-size:13.5px;padding:.22rem 0}
+.hbar .track{height:14px;border-radius:0 4px 4px 0;background:none;border-left:1px solid var(--line2)}
+.hbar .track i{display:block;height:100%;background:var(--aqua2);border-radius:0 4px 4px 0;transform-origin:left;animation:grow .9s cubic-bezier(.2,.8,.2,1) both}
+.hbar:hover .track i{background:var(--aqua)}
+.hbar span:last-child{text-align:right;color:var(--mute);font-variant-numeric:tabular-nums}
+.toggle{font-size:13px}
+/* ---------- toast ---------- */
+#toast{position:fixed;left:50%;bottom:calc(1.2rem + env(safe-area-inset-bottom,0px));transform:translate(-50%,12px);background:#e6f2f0;color:#082027;
+  padding:.65rem 1.1rem;border-radius:99px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:90vw;z-index:9;font-weight:500;font-size:14px}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+/* ---------- page-load sequence (overview only) ---------- */
+.intro>*{animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+.intro>*:nth-child(2){animation-delay:.08s}.intro>*:nth-child(3){animation-delay:.16s}.intro>*:nth-child(4){animation-delay:.24s}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}}
+@media (max-width:1000px){.hero,.checker,.grid2{grid-template-columns:1fr}.side{position:static}.flow{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.app{display:block}
+  nav{position:sticky;height:auto;flex-direction:row;overflow-x:auto;padding:.6rem;gap:.2rem;z-index:5;border-right:0;border-bottom:1px solid var(--line)}
+  .brand{padding:.2rem .6rem .2rem .2rem}.brand span{display:none}
+  nav button{width:auto;white-space:nowrap;padding:.5rem .7rem}nav button.on{box-shadow:inset 0 -2px 0 var(--aqua)}
+  .conn{display:none}main{padding-top:1.4rem}.flow{grid-template-columns:1fr}.figs{gap:1.3rem}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+<nav id="nav" aria-label="Sections"></nav>
+<main id="main"></main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+const ICON={home:'<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+patients:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/>',
+doctors:'<path d="M6 3v5a4 4 0 0 0 8 0V3"/><path d="M10 12v3a5 5 0 0 0 10 0v-2"/><circle cx="20" cy="11" r="2"/>',
+appts:'<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+ai:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5s-1.2 6.1-3.8 8.5c-2.6-2.4-3.8-5.2-3.8-8.5S9.4 5.9 12 3.5"/>',
+rx:'<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+kaggle:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>'};
+const NAV=[['home','Overview'],['patients','Patients'],['doctors','Doctors'],['appts','Appointments'],['ai','Symptom checker'],['rx','Prescriptions and labs'],['kaggle','Kaggle data']];
+const $=s=>document.querySelector(s),g=id=>($('#'+id)||{}).value||'';
+const e=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S={patients:[],appts:[],checks:[]},M={specs:[],doctors:[],symptoms:[],diseases:[],tests:{},links:[]},K=null;
+let V='home',PID=null,CV=null,CUR=null,PRE=null,JUST=false,FIRST=true,OK=null;
+let SEL=new Map(),SQ='',SF='',SHOWALL=false;
+const P=id=>S.patients.find(p=>p.id==id)||{n:'Unknown patient',vt:[],al:[],hx:[]},D=id=>M.doctors.find(d=>d.id==id)||{n:'Unknown doctor',sp:[]};
+const Dz=id=>M.diseases.find(d=>d.id==id)||{n:'Unknown',sev:1,prec:[]},SP=id=>(M.specs.find(s=>s.id==id)||{}).n||'';
+const Sy=id=>(M.symptoms.find(s=>s.id==id)||{}).n||'';
+const fd=i=>new Date(i).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const fday=i=>new Date(i).toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
+const ftime=i=>new Date(i).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+const age=b=>Math.floor((Date.now()-new Date(b))/31557600000);
+const lv=p=>p.vt[p.vt.length-1];
+const ini=n=>n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+function vf(v){const f=[];if(!v)return f;if(v.temp>=38)f.push('Fever');if(v.spo2!==''&&v.spo2<94)f.push('Low oxygen');if(v.sys>=140||v.dia>=90)f.push('High blood pressure');if(v.hr>100)f.push('Fast pulse');if(+v.glu>125)f.push('High glucose');return f}
+const chip=(t,c='')=>`<span class="chip ${c}">${e(t)}</span>`;
+const fc=f=>f=='High'||f=='Critical'?'hi':f=='Low'?'warn':'ok';
+const stc=s=>s=='Completed'?'ok':s=='Cancelled'||s=='No-Show'?'warn':'line';
+const empty=t=>`<p class="mute">${e(t)}</p>`;
+const urg=d=>d.sev>=4?'Urgent':d.sev==3?'Soon':'Routine';
+const urgc=d=>d.sev>=4?'hi':d.sev==3?'warn':'ok';
+function toast(m){const t=$('#toast');t.textContent=m;t.className='on';clearTimeout(toast.h);toast.h=setTimeout(()=>t.className='',2800)}
+function go(v){V=v;PID=null;CV=null;try{history.replaceState(null,'','#'+v)}catch(_){}render();scrollTo(0,0);if(v=='kaggle'&&!K)loadK()}
+function go2(v){V=v;CV=null;render();scrollTo(0,0)}
+function opts(arr,sel,f){return arr.map(x=>`<option value="${x.id}" ${x.id==sel?'selected':''}>${e(f(x))}</option>`).join('')}
+const apRow=a=>`<div class="row"><div><h3>${e(P(a.pid).n)}</h3><span class="mute">${fday(a.s)} at ${ftime(a.s)} with ${e(D(a.did).n)}${a.reason?', '+e(a.reason):''}</span></div><div class="acts">${chip(a.st,stc(a.st))}</div></div>`;
+const globeSlot=(cap)=>`<div><div class="globe" id="globe" role="img" aria-label="3D map of the Kaggle knowledge base: ${M.symptoms.length} symptoms linked to ${M.diseases.length} diseases"></div>${cap||''}</div>`;
+
+const VIEWS={
+home(){const up=S.appts.filter(a=>a.st=='Scheduled'&&new Date(a.e)>Date.now()).sort((a,b)=>a.s.localeCompare(b.s));
+const att=S.patients.filter(p=>vf(lv(p)).length),open=S.checks.filter(c=>!c.fb);
+return `<section class="hero"><div class="${FIRST?'intro':''}">
+<h1>Every patient, visit and diagnosis in one ledger</h1>
+<p class="lede">The symptom checker reasons over ${M.symptoms.length} symptoms and ${M.diseases.length} diseases learned from ${(4920).toLocaleString()} Kaggle patient records, all stored in MySQL.</p>
+<div class="figs"><div><b>${S.patients.length}</b><span>patients</span></div><div><b>${up.length}</b><span>upcoming visits</span></div><div><b>${open.length}</b><span>AI checks to review</span></div><div><b>${M.doctors.length}</b><span>doctors</span></div></div>
+<div class="acts"><button class="b" onclick="go('ai')">Run a symptom check</button><button class="g" onclick="go('appts')">Book a visit</button></div></div>
+${globeSlot(`<div class="legend"><span><i style="background:var(--aqua)"></i>Symptoms, grouped by body system</span><span><i style="background:var(--amber)"></i>Diseases</span><span class="faint">Drag to turn, hover for names</span></div>`)}</section>
+<div class="grid2 sec"><div class="panel"><h2>Next appointments</h2>${up.slice(0,5).map(apRow).join('')||empty('Nothing scheduled. Book a visit from Appointments.')}</div>
+<div class="panel"><h2>Needs attention</h2>${att.map(p=>`<div class="row"><div class="who"><span class="avatar">${ini(p.n)}</span><div><h3>${e(p.n)}</h3><span class="mute">Vitals from ${fd(lv(p).t)}</span></div></div><div class="acts">${vf(lv(p)).map(f=>chip(f,'hi')).join('')}<button class="g" onclick="PID=${p.id};go2('patients')">Open record</button></div></div>`).join('')||empty('All latest vitals are in the normal range.')}</div></div>`},
+
+patients(){if(PID)return pdetail(P(PID));
+return `<div class="head"><div><h1>Patients</h1><p class="mute">${S.patients.length} active records. Open one to see vitals, allergies and visits.</p></div></div>
+<div class="panel"><div class="form" style="margin-bottom:.4rem"><label>Search by name<input id="q" oninput="plist()" placeholder="Start typing a name" autocomplete="off"></label></div><div id="plist"></div></div>
+<div class="panel"><h2 style="margin-bottom:.9rem">Register a patient</h2><div class="form"><label>Full name<input id="n" autocomplete="off"></label><label>Date of birth<input id="dob" type="date"></label><label>Sex<select id="sx"><option>Female</option><option>Male</option><option>Other</option></select></label><label>Blood group<select id="bg">${['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(x=>`<option>${x}</option>`).join('')}</select></label><label>Phone<input id="ph" inputmode="tel"></label><button class="b" onclick="addP()">Register patient</button></div></div>`},
+
+doctors(){const f=g('sf'),q=g('sq').trim().toLowerCase();
+const l=M.doctors.filter(d=>(f===''||d.sp.includes(+f))&&(!q||(d.n+' '+d.sp.map(SP).join(' ')+' '+(d.lang||'')).toLowerCase().includes(q)));
+const fdate=i=>new Date(i+'T00:00').toLocaleDateString([],{day:'numeric',month:'short'});
+return `<div class="head"><div><h1>Doctors</h1><p class="mute">${l.length==M.doctors.length?M.doctors.length+' doctors':l.length+' of '+M.doctors.length+' doctors'} across ${M.specs.length} specializations.</p></div>
+<div class="acts"><label style="min-width:200px">Search<input id="sq" value="${e(g('sq'))}" placeholder="Name, specialty or language" onchange="render()"></label>
+<label style="min-width:220px">Specialization<select id="sf" onchange="render()"><option value="">All specializations</option>${M.specs.map(s=>`<option value="${s.id}" ${f==''+s.id?'selected':''}>${e(s.n)}</option>`).join('')}</select></label></div></div>
+<div class="docs">${l.map(d=>`<div class="panel doc"><div class="who"><span class="avatar">${ini(d.n.replace('Dr. ',''))}</span><div><h3>${e(d.n)}</h3><span class="meta">${e(d.q||'')}</span></div></div>
+<div>${d.sp.map((i,k)=>chip(SP(i),k?'line':'')).join('')}</div>${d.bio?`<p class="bio">${e(d.bio)}</p>`:''}
+<div class="meta">${d.exp} years of experience, fee ₹${d.fee.toLocaleString()}${d.room?', room '+e(d.room):''}${d.lang?'<br>Speaks '+e(d.lang):''}</div>
+<div class="stats"><b>${d.done}</b> ${d.done==1?'visit':'visits'} completed, <b>${d.up}</b> upcoming, <b>${d.pts}</b> ${d.pts==1?'patient':'patients'}</div>
+<div class="sch">${d.sch.map(e).join('<br>')||'No schedule'}</div>
+${d.lv.map(x=>`<div class="leave">On leave ${fdate(x.from)}${x.to!=x.from?' to '+fdate(x.to):''}${x.why?' ('+e(x.why)+')':''}</div>`).join('')}
+<button class="g" onclick="PRE={did:${d.id}};go2('appts')">Book ${e(d.n.split(' ')[1])}</button></div>`).join('')||empty('No doctor matches that search.')}</div>`},
+
+appts(){const pr=PRE||{};const now=Date.now();
+const up=S.appts.filter(a=>a.st=='Scheduled').sort((a,b)=>a.s.localeCompare(b.s)),past=S.appts.filter(a=>a.st!='Scheduled').sort((a,b)=>b.s.localeCompare(a.s));
+const row=a=>`<div class="row"><div><h3>${e(P(a.pid).n)} with ${e(D(a.did).n)}</h3><span class="mute">${fday(a.s)}, ${ftime(a.s)}–${ftime(a.e)}${a.reason?'. '+e(a.reason):''}</span>${a.dx?`<br><span>Diagnosis: ${e(a.dx)}</span>`:''}</div><div class="acts">${chip(a.st,stc(a.st))}${a.st=='Scheduled'?`<button class="g" onclick="CV=${a.id};render()">Complete visit</button><button class="g danger" onclick="setSt(${a.id},'Cancelled')">Cancel</button>`:''}</div></div>${CV==a.id?cvForm():''}`;
+return `<div class="head"><div><h1>Appointments</h1><p class="mute">MySQL rejects a booking if the doctor already has a visit in that slot.</p></div></div>
+<div class="panel"><h2 style="margin-bottom:.9rem">Book a visit</h2><div class="form"><label>Patient<select id="bp">${opts(S.patients,pr.pid,p=>p.n)}</select></label><label>Doctor<select id="bd" onchange="loadSlots()">${opts(M.doctors,pr.did,d=>d.n+' ('+SP(d.sp[0])+')')}</select></label><label>Date<input id="bt" type="date" value="${tdy()}" min="${tdy()}" onchange="loadSlots()"></label>
+<label>Reason<input id="br" value="${e(pr.reason||'')}"></label><div class="slotbox" id="slots" aria-live="polite"></div><button class="b" onclick="book()">Book appointment</button></div></div>
+<div class="sec"><h2>Scheduled</h2><div class="panel">${up.map(row).join('')||empty('No scheduled visits.')}</div></div>
+<div class="sec"><h2>Past and cancelled</h2><div class="panel">${past.map(row).join('')||empty('No past visits yet.')}</div></div>`},
+
+ai(){const c=S.checks.find(x=>x.id==CUR);const rev=S.checks.filter(x=>x.fb),ok=rev.filter(x=>x.fb=='yes').length;
+const systems=[...new Set(M.symptoms.map(s=>s.sys||'General'))].sort();
+return `<div class="head"><div><h1>Symptom checker</h1><p class="mute">Pick what the patient reports and how bad it is. MySQL scores all ${M.diseases.length} diseases with the Kaggle knowledge base. It supports a doctor’s judgment and is not a diagnosis.</p></div></div>
+<div class="checker"><div>
+<div class="panel"><div class="form"><label>Patient<select id="cp">${opts(S.patients,c?c.pid:0,p=>p.n)}</select></label><label>Find a symptom<input id="sq" value="${e(SQ)}" oninput="SQ=this.value;symList()" placeholder="Try fever, rash or joint" autocomplete="off"></label></div>
+<div class="filters" role="group" aria-label="Body system"><button class="${SF==''?'on':''}" onclick="SF='';symFilters();symList()">All</button>${systems.map(s=>`<button class="${SF==s?'on':''}" data-s="${e(s)}" onclick="SF=this.dataset.s;symFilters();symList()">${e(s)}</button>`).join('')}</div>
+<div class="symlist" id="symlist"></div>
+<div class="tray" id="tray"></div>
+<div class="acts" style="margin-top:1rem"><button class="b" onclick="runAI()">Match conditions</button><button class="g" onclick="SEL.clear();symList();tray()">Clear</button></div></div>
+${c?result(c):''}
+</div>
+<div class="side">${globeSlot(`<div class="legend"><span><i style="background:var(--coral)"></i>Reported symptoms</span><span><i style="background:var(--amber)"></i>Matched diseases</span></div>`)}</div></div>
+<div class="sec"><h2>Past checks</h2><p class="mute" style="margin-bottom:.8rem">${rev.length?`Doctors agreed with the top suggestion in ${ok} of ${rev.length} reviewed checks (${Math.round(100*ok/rev.length)}%).`:'No reviews yet.'}</p>
+<div class="panel">${S.checks.slice().reverse().map(x=>`<div class="row"><div><h3>${e(P(x.pid).n)}</h3><span class="mute">${fd(x.ts)}, top match ${x.preds[0]?e(Dz(x.preds[0].d).n):'none'}, ${x.items.length} symptoms</span></div><div class="acts"><button class="g" onclick="CUR=${x.id};SEL=new Map(S.checks.find(k=>k.id==${x.id}).items.map(i=>[i.s,i.v]));render();scrollTo({top:0,behavior:'smooth'})">View</button>${x.fb?chip(x.fb=='yes'?'Doctor agreed':'Doctor disagreed',x.fb=='yes'?'ok':'warn'):`<button class="g" onclick="fb(${x.id},'yes')">Doctor agrees</button><button class="g danger" onclick="fb(${x.id},'no')">Doctor disagrees</button>`}</div></div>`).join('')||empty('Run a check to see it here.')}</div></div>`},
+
+rx(){const l=S.appts.filter(a=>a.st=='Completed').sort((a,b)=>b.s.localeCompare(a.s));
+return `<div class="head"><div><h1>Prescriptions and labs</h1><p class="mute">Lab results are flagged Low, Normal or High by a MySQL trigger against each test’s reference range.</p></div></div>
+${l.map(a=>`<div class="panel"><div class="who" style="margin-bottom:.8rem"><span class="avatar">${ini(P(a.pid).n)}</span><div><h3>${e(P(a.pid).n)}</h3><span class="mute">${fd(a.s)} with ${e(D(a.did).n)}${a.dx?'. '+e(a.dx):''}</span></div></div>
+<div class="grid2"><div class="wrap"><table><tr><th>Medication</th><th>How often</th><th>Days</th></tr>${a.rx.map(r=>`<tr><td>${e(r.m)}</td><td>${e(r.f)}</td><td>${r.d}</td></tr>`).join('')||'<tr><td colspan="3" class="mute">No medication prescribed</td></tr>'}</table></div>
+<div class="wrap"><table><tr><th>Lab test</th><th>Result</th><th>Range</th></tr>${a.labs.map(r=>{const t=M.tests[r.t]||['','',''];return `<tr><td>${e(r.t)}</td><td>${+r.v} ${e(t[2])} ${chip(r.f,fc(r.f))}</td><td>${t[0]} to ${t[1]}</td></tr>`}).join('')||'<tr><td colspan="3" class="mute">No lab tests ordered</td></tr>'}</table></div></div></div>`).join('')||empty('Completed visits appear here with their prescriptions and lab results.')}`},
+
+kaggle(){if(!K)return `<h1>Kaggle data</h1>${empty('Loading the dataset from MySQL…')}`;
+const t=K.totals,max=K.top[0]?K.top[0].cnt:1;const ds=SHOWALL?K.diseases:K.diseases.slice(0,12);
+return `<div class="head"><div><h1>Kaggle data</h1><p class="mute">The symptom checker is trained on the <a href="https://www.kaggle.com/datasets/itachi9604/disease-symptom-description-dataset" target="_blank" rel="noopener">Disease Symptom Prediction</a> dataset from Kaggle. All numbers below are queried live from MySQL.</p></div></div>
+<div class="panel"><div class="figs" style="margin:0"><div><b>${t.records.toLocaleString()}</b><span>patient records</span></div><div><b>${t.diseases}</b><span>diseases</span></div><div><b>${t.symptoms}</b><span>symptoms</span></div><div><b>${t.pairs.toLocaleString()}</b><span>record–symptom rows</span></div><div><b>${t.links}</b><span>learned links</span></div></div></div>
+<div class="sec"><h2>How the data reaches the symptom checker</h2><ol class="flow">
+<li><b>Four CSV files</b>Records, symptom severity, disease descriptions and precautions in <code>data/kaggle/</code>.</li>
+<li><b>Cleaned and imported</b><code>kaggle_import.py</code> fixes typos and writes them into <code>kaggle_cases</code> and <code>kaggle_case_symptoms</code>.</li>
+<li><b>Learned in SQL</b>One <code>INSERT … SELECT</code> turns how often a symptom appears per disease, times its severity, into <code>disease_symptoms.weight</code>.</li>
+<li><b>Scored per patient</b>The <code>match_diseases()</code> procedure ranks diseases for each check and stores them in <code>ai_predictions</code>.</li></ol></div>
+<div class="grid2 sec"><div class="panel"><h2>Accuracy on the Kaggle records</h2><p class="mute" style="margin-bottom:1rem">Share of records where the true disease was the top suggestion, or in the top three.</p><div class="acc">
+${K.evals.map(v=>`<div><p style="margin:0 0 .45rem;font-size:14px">${e(v.method)} <span class="faint">(${v.records.toLocaleString()} records)</span></p>
+<div class="bar top"><span>Top suggestion correct</span><b>${(v.t1*100).toFixed(1)}%</b><div class="track"><i style="width:${v.t1*100}%"></i></div></div>
+<div class="bar"><span>Correct disease in top three</span><b>${(v.t3*100).toFixed(1)}%</b><div class="track"><i style="width:${v.t3*100}%"></i></div></div></div>`).join('')}</div></div>
+<div class="panel"><h2>Most common symptoms</h2><p class="mute" style="margin-bottom:.9rem">Number of Kaggle records that report each symptom.</p>
+${K.top.map(s=>`<div class="hbar" title="${e(s.n)}: ${s.cnt.toLocaleString()} records, severity ${s.w} of 7"><span>${e(s.n)}</span><div class="track"><i style="width:${s.cnt/max*100}%"></i></div><span>${s.cnt.toLocaleString()}</span></div>`).join('')}</div></div>
+<div class="sec"><h2>What the model learned for each disease</h2><div class="panel wrap"><table><tr><th>Disease</th><th>Records</th><th>Symptoms</th><th>Strongest signs (weight)</th><th>Follow-up</th></tr>
+${ds.map(d=>`<tr><td>${e(d.n)}</td><td>${d.cnt}</td><td>${d.nsym}</td><td>${d.top.map(x=>`${e(x.n)} <span class="faint">${x.w.toFixed(2)}</span>`).join(', ')}</td><td>${chip(urg(d),urgc(d))}</td></tr>`).join('')}</table>
+${K.diseases.length>12?`<button class="g toggle" style="margin-top:1rem" onclick="SHOWALL=!SHOWALL;render()">${SHOWALL?'Show fewer':'Show all '+K.diseases.length+' diseases'}</button>`:''}</div></div>`}};
+
+function pdetail(p){const v=lv(p),fl=vf(v);
+const tile=(lab,val,unit,flag)=>`<div class="vital ${flag?'flag':''}"><span>${lab}${flag?`<em>${flag}</em>`:''}</span><b>${val===''||val==null?'–':val}<small class="faint" style="font-size:.8rem;font-weight:400"> ${val===''||val==null?'':unit}</small></b></div>`;
+return `<button class="g" onclick="PID=null;render()">Back to patients</button>
+<div class="head" style="margin-top:1.2rem"><div class="who"><span class="avatar" style="width:56px;height:56px;font-size:18px;border-radius:17px">${ini(p.n)}</span><div><h1>${e(p.n)}</h1><p class="mute" style="margin:0">${age(p.dob)} years, ${e(p.sx)}, blood group ${e(p.bg||'unknown')}, phone ${e(p.ph)}</p></div></div>
+<div class="acts"><button class="g" onclick="PRE={pid:${p.id}};go2('appts')">Book a visit</button><button class="b" onclick="SEL.clear();CUR=null;go2('ai');setTimeout(()=>{$('#cp').value=${p.id}},0)">Check symptoms</button></div></div>
+<div class="grid2"><div class="panel"><h2 style="margin-bottom:.6rem">Allergies</h2>${p.al.map(a=>chip(a.a+': '+(a.r||a.s),a.s=='Severe'?'hi':'warn')).join('')||empty('None recorded.')}</div>
+<div class="panel"><h2 style="margin-bottom:.6rem">Medical history</h2>${p.hx.map(h=>chip(h.c+' ('+h.st+')')).join('')||empty('None recorded.')}</div></div>
+<div class="sec"><h2>Latest vitals ${v?`<span class="mute" style="font:400 13.5px var(--body)">taken ${fd(v.t)}</span>`:''}</h2>
+${v?`<div class="vitals">${tile('Temperature',v.temp,'°C',v.temp>=38?'Fever':'')}${tile('Pulse',v.hr,'bpm',v.hr>100?'Fast':'')}${tile('BP',v.sys&&v.dia?v.sys+'/'+v.dia:'','mmHg',v.sys>=140||v.dia>=90?'High':'')}${tile('SpO₂',v.spo2,'%',v.spo2!==''&&v.spo2<94?'Low':'')}${tile('Glucose',v.glu,'mg/dL',+v.glu>125?'High':'')}${tile('Weight',v.wt,'kg','')}</div>`:empty('No vitals recorded yet.')}
+${p.vt.length>1?`<div class="panel wrap" style="margin-top:1rem"><table><tr><th>Taken</th><th>Temp °C</th><th>Pulse</th><th>BP</th><th>SpO₂</th><th>Glucose</th><th>Weight kg</th></tr>${p.vt.slice(-6).reverse().map(x=>`<tr><td>${fd(x.t)}</td><td>${x.temp}</td><td>${x.hr}</td><td>${x.sys}/${x.dia}</td><td>${x.spo2}${x.spo2!==''?'%':''}</td><td>${x.glu||'–'}</td><td>${x.wt}</td></tr>`).join('')}</table></div>`:''}
+<div class="panel" style="margin-top:1rem"><h2 style="margin-bottom:.9rem">Record new vitals</h2><div class="form"><label>Temp °C<input id="vt" type="number" step=".1"></label><label>Pulse<input id="vh" type="number"></label><label>Systolic<input id="vs" type="number"></label><label>Diastolic<input id="vd" type="number"></label><label>SpO₂ %<input id="vo" type="number" step=".1"></label><label>Glucose<input id="vg" type="number"></label><label>Weight kg<input id="vw" type="number" step=".1"></label><button class="b" onclick="addV()">Record vitals</button></div></div></div>
+<div class="sec"><h2>Visits</h2><div class="panel">${S.appts.filter(a=>a.pid==p.id).sort((a,b)=>b.s.localeCompare(a.s)).map(a=>`<div class="row"><div><h3>${fd(a.s)} with ${e(D(a.did).n)}</h3><span class="mute">${e(a.dx||a.reason||'')}</span></div><div class="acts">${chip(a.st,stc(a.st))}${a.rx.map(r=>chip(r.m,'line')).join('')}${a.labs.map(r=>chip(r.t+' '+(+r.v),fc(r.f))).join('')}</div></div>`).join('')||empty('No visits yet.')}</div></div>`}
+
+function result(c){const top=c.preds[0];if(!top)return `<div class="panel" style="margin-top:1.2rem">${empty('No disease in the knowledge base matches those symptoms.')}</div>`;
+const d=Dz(top.d),doc=M.doctors.find(x=>x.sp[0]==d.sp)||M.doctors.find(x=>x.sp.includes(d.sp)),mx=Math.max(...c.preds.map(x=>x.sc));
+return `<div class="match ${JUST?'new':''}"><span class="mute">Closest match for ${e(P(c.pid).n)}</span><h2>${e(d.n)}</h2>
+<div>${chip(urg(d)+' follow-up',urgc(d))}${chip(SP(d.sp),'line')}${d.icd?chip('ICD-10 '+d.icd,'line'):''}</div>
+${d.info?`<p class="mute" style="margin-top:.7rem;font-size:14px">${e(d.info)}</p>`:''}
+${d.prec&&d.prec.length?`<ol class="prec" aria-label="Precautions from the Kaggle dataset">${d.prec.map(x=>`<li>${e(x)}</li>`).join('')}</ol>`:''}
+${doc?`<div class="acts" style="margin-top:1rem"><button class="b" onclick="PRE={pid:${c.pid},did:${doc.id},reason:${e(JSON.stringify('Possible '+d.n))}};go2('appts')">Book ${e(doc.n)}</button></div>`:''}</div>
+<div class="panel bars"><h3 style="margin-bottom:.4rem">All matches</h3>${c.preds.map((x,i)=>`<div class="bar ${i?'':'top'}"><span>${e(Dz(x.d).n)}</span><div class="track"><i style="width:${Math.max(3,x.sc/mx*100)}%;animation-delay:${i*.06}s"></i></div><small>${Math.round(x.sc*100)}% match, ${x.m} symptom${x.m==1?'':'s'}</small></div>`).join('')}</div>`}
+
+function cvForm(){return `<div class="panel" style="margin:.2rem 0 1rem"><div class="form"><label>Diagnosis<input id="dx"></label><label>Medication and strength<input id="med" placeholder="Paracetamol 500 mg"></label><label>How often<input id="fr" placeholder="Twice daily"></label><label>Days<input id="dd" type="number" value="5"></label><label>Lab test<select id="lt"><option value="">None</option>${Object.keys(M.tests).map(t=>`<option>${e(t)}</option>`).join('')}</select></label><label>Lab result<input id="lv" type="number" step=".1"></label><button class="b" onclick="doneVisit(${CV})">Save visit</button></div></div>`}
+
+function plist(){const q=g('q').toLowerCase(),l=S.patients.filter(p=>p.n.toLowerCase().includes(q));
+$('#plist').innerHTML=l.map(p=>`<div class="row"><div class="who"><span class="avatar">${ini(p.n)}</span><div><h3>${e(p.n)}</h3><span class="mute">${age(p.dob)} years, ${e(p.sx)}, ${e(p.bg||'')}</span></div></div><div class="acts">${vf(lv(p)).map(f=>chip(f,'hi')).join('')}<button class="g" onclick="PID=${p.id};render()">Open record</button></div></div>`).join('')||empty('No patients match that name.')}
+
+/* ---- symptom picker: updates in place so the search box keeps focus ---- */
+function symFilters(){document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',(b.dataset.s||'')==SF))}
+function symList(){const el=$('#symlist');if(!el)return;const q=SQ.trim().toLowerCase();
+const l=M.symptoms.filter(s=>(!SF||(s.sys||'General')==SF)&&(!q||s.n.toLowerCase().includes(q)));
+el.innerHTML=l.map(s=>`<button class="sym ${SEL.has(s.id)?'on':''}" aria-pressed="${SEL.has(s.id)}" onclick="tog(${s.id})"><i></i>${e(s.n)}</button>`).join('')||empty('No symptom matches that search.');}
+function tray(){const el=$('#tray');if(!el)return;
+el.innerHTML=SEL.size?`<span class="mute" style="font-size:13px">${SEL.size} selected. Set how severe each one is, 1 mild to 5 severe.</span>`+[...SEL].map(([id,v])=>`<div class="t"><span>${e(Sy(id))}</span><span class="acts"><span class="sev" role="group" aria-label="Severity of ${e(Sy(id))}">${[1,2,3,4,5].map(n=>`<button class="${n==v?'on':''}" aria-pressed="${n==v}" onclick="SEL.set(${id},${n});tray()">${n}</button>`).join('')}</span><button class="x" aria-label="Remove ${e(Sy(id))}" onclick="tog(${id})">×</button></span></div>`).join(''):'';
+if(window.Globe&&Globe.highlight&&V=='ai'){const c=S.checks.find(x=>x.id==CUR);Globe.highlight({symptoms:[...SEL.keys()],diseases:c&&sameSel(c)?c.preds.slice(0,3).map(x=>x.d):[]})}}
+function sameSel(c){return c.items.length==SEL.size&&c.items.every(i=>SEL.has(i.s))}
+function tog(id){SEL.has(id)?SEL.delete(id):SEL.set(id,3);symList();tray()}
+
+/* ---- data ---- */
+async function api(m,u,b){try{const r=await fetch('/api'+u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const j=await r.json().catch(()=>({}));if(!r.ok){toast(j.detail||'The server could not save that. Check the values and try again.');return null}OK=true;return j}catch(_){OK=false;conn();toast('Cannot reach the server. Start it with uvicorn app:app and reload.');return null}}
+async function load(){const j=await api('GET','/state');if(j){S=j;render()}}
+async function loadMeta(){const j=await api('GET','/meta');if(j){M=j;if(window.Globe&&Globe.setData)Globe.setData(M);else (window.Globe=window.Globe||{})._pending={...(window.Globe._pending||{}),data:M};render()}}
+async function loadK(){const j=await api('GET','/kaggle');if(j){K=j;if(V=='kaggle')render()}}
+async function mut(m,u,b,msg){const j=await api(m,u,b);if(j){await load();if(msg)toast(msg)}return j}
+function addP(){if(!g('n')||!g('dob')||!g('ph'))return toast('Enter a name, date of birth and phone number');const w=g('n').trim().split(/\s+/);mut('POST','/patients',{first_name:w[0],last_name:w.slice(1).join(' ')||'-',date_of_birth:g('dob'),gender:g('sx'),blood_group:g('bg'),phone:g('ph')},'Patient registered')}
+function addV(){if(!g('vt')||!g('vs')||!g('vd'))return toast('Enter at least temperature and blood pressure');mut('POST','/patients/'+PID+'/vitals',{temperature_c:+g('vt'),heart_rate_bpm:+g('vh')||null,systolic_bp:+g('vs'),diastolic_bp:+g('vd'),spo2_percent:+g('vo')||null,blood_glucose_mgdl:+g('vg')||null,weight_kg:+g('vw')||null},'Vitals recorded')}
+const tdy=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+let PICK=null;
+async function loadSlots(){const box=$('#slots');if(!box)return;PICK=null;const did=g('bd'),day=g('bt');
+if(!did||!day){box.innerHTML='<span class="mute">Pick a doctor and a date to see free times.</span>';return}
+box.innerHTML='<span class="mute">Loading times...</span>';
+const j=await api('GET','/doctors/'+did+'/slots?day='+day);if(!$('#slots'))return;
+if(!j){box.innerHTML='';return}
+if(j.leave){box.innerHTML=`<span class="chip warn">On leave: ${e(j.leave)}</span>`;return}
+if(!j.slots.length){box.innerHTML='<span class="mute">This doctor does not see patients on that day. Try another date.</span>';return}
+const free=j.slots.filter(x=>x.free).length;
+box.innerHTML=`<span class="mute" style="width:100%">${free} of ${j.slots.length} slots free</span>`+j.slots.map((x,i)=>`<button type="button" class="slot" ${x.free?'':'disabled'} data-i="${i}" onclick="pickSlot(${i})">${x.t}</button>`).join('');box._d=j.slots}
+function pickSlot(i){const box=$('#slots');PICK=box._d[i];box.querySelectorAll('.slot').forEach(b=>b.classList.toggle('on',+b.dataset.i===i))}
+async function book(){if(!PICK)return toast('Pick a free time slot');const j=await mut('POST','/appointments',{patient_id:+g('bp'),doctor_id:+g('bd'),start_time:PICK.s,end_time:PICK.e,reason:g('br')},'Appointment booked');if(j){PRE=null;PICK=null}else loadSlots()}
+function setSt(id,st){mut('PATCH','/appointments/'+id,{status:st},st=='Cancelled'?'Appointment cancelled':'Status updated')}
+async function doneVisit(id){const lv_=g('lv');const j=await mut('POST','/appointments/'+id+'/complete',{diagnosis:g('dx'),medication:g('med'),frequency:g('fr'),days:+g('dd')||5,lab_test:g('lt'),lab_value:lv_===''?null:parseFloat(lv_)},'Visit saved');if(j){CV=null;render()}}
+async function runAI(){if(!SEL.size)return toast('Select at least one symptom');const items=[...SEL].map(([s,v])=>({symptom_id:s,severity:v}));
+const j=await api('POST','/symptom-checks',{patient_id:+g('cp'),items});if(j){CUR=j.id;JUST=true;await load();JUST=false;const m=$('.match');if(m)m.scrollIntoView({behavior:'smooth',block:'nearest'})}}
+function fb(id,v){mut('POST','/symptom-checks/'+id+'/feedback',{correct:v=='yes'},'Review saved')}
+
+function conn(){const c=$('.conn');if(c){c.className='conn '+(OK?'ok':OK===false?'err':'');c.lastChild.textContent=OK?'Connected to MySQL':OK===false?'API not reachable':'Connecting…'}}
+function render(){
+$('#nav').innerHTML=`<div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="9" fill="url(#lg)"/><path d="M6 17h5l2.5-6 4 11 2.8-7H26" fill="none" stroke="#062a27" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="lg" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#6ee7d8"/><stop offset="1" stop-color="#9fd7f5"/></linearGradient></defs></svg><span>CareLedger</span></div>`+
+NAV.map(n=>`<button class="${n[0]==V?'on':''}" ${n[0]==V?'aria-current="page"':''} onclick="go('${n[0]}')"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n[0]]}</svg>${n[1]}</button>`).join('')+`<div class="conn"><i></i><span></span></div>`;
+conn();
+$('#main').innerHTML=VIEWS[V]();
+if(V=='patients'&&!PID)plist();
+if(V=='appts')loadSlots();
+if(V=='ai'){symList();tray()}
+const slot=$('#globe');
+if(slot){if(window.Globe&&Globe.ready){Globe.mount(slot);if(V!='ai')Globe.highlight({})}else{(window.Globe=window.Globe||{})._pending={...(window.Globe._pending||{}),el:slot}}}
+if(V=='home'&&S.patients.length)FIRST=false}
+try{const h=location.hash.slice(1);if(VIEWS[h])V=h}catch(_){}
+render();loadMeta();load();if(V=='kaggle')loadK();
+</script>
+<script type="module" src="globe.js"></script>
+</body>
+</html>
